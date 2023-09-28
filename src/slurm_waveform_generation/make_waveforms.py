@@ -5,6 +5,8 @@ import os
 from tqdm.auto import tqdm
 from time import process_time
 import numpy as np
+import pandas as pd
+import h5py
 
 
 def get_cli_args():
@@ -35,7 +37,7 @@ def get_cli_args():
         raise ValueError(f"Prior file {args.prior_file} does not exist")
 
 
-def run_waveform_generator(n_waveforms: int, prior_file: str, outdir: str):
+def run_waveform_generator(n_waveforms: int, prior_file: str, outfn: str):
     prior = bilby.core.prior.PriorDict.from_file(prior_file)
     samples = prior.sample(n_waveforms)
 
@@ -43,17 +45,42 @@ def run_waveform_generator(n_waveforms: int, prior_file: str, outdir: str):
     pbar = tqdm(total=n_waveforms, desc="Making waveforms")
     start = process_time()
 
-    for i in pbar:
+    waveforms = []
+    runtimes = np.zeros(n_waveforms)
 
+    for i in pbar:
         # add total-mass to the pbar post
-        pbar.set_postfix({"total_mass": round(samples[i]["total_mass"],2)})
+        pbar.set_postfix({"total_mass": round(samples[i]["total_mass"], 2)})
 
         # generate waveform
         t0 = process_time()
-        waveform = __generate_waveform(**samples[i])
+        waveforms.append(__generate_waveform(**samples[i]))
         t1 = process_time()
+        runtimes[i] = t1 - t0
+
+    waveforms = convert_lists_of_different_sizes_to_np_ndarray(waveforms)
+    samples = pd.DataFrame(samples)
+    samples["runtime"] = runtimes
+    # write waveforms and samples to h5 file
+    with h5py.File(outfn, "w") as f:
+        f.create_dataset("waveforms", data=waveforms)
+        samples.to_hdf(f, "samples")
+
+    end = process_time()
+    print(f"Time taken: {end - start:.2f} s")
 
 
+def convert_lists_of_different_sizes_to_np_ndarray(data):
+    """Convert a list of lists of different sizes to a numpy ndarray padded with nans
+
+    :param data: List of lists of different sizes
+    :return: Numpy ndarray
+    """
+    max_shape = max([np.array(d).shape for d in data])
+    padded_data = np.full((len(data), *max_shape), np.nan)
+    for i, d in enumerate(data):
+        padded_data[i, : len(d)] = d
+    return padded_data
 
 
 def __generate_waveform(**kwargs) -> np.ndarray:

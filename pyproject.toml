@@ -22,7 +22,7 @@ classifiers = [
   "Programming Language :: Python :: 3",
 ]
 
-dependencies = ["bilby", "lalsimulation"]
+dependencies = ["bilby", "pycbc", "interruptingcow"]
 dynamic = ["version"]
 
 [project.urls]
